@@ -9,7 +9,11 @@
 RF24 radio(7, 8);
 RF24Network network(radio);
 RF24Mesh mesh(radio, network);
-int msg;
+
+
+#define pinR 2
+#define pinG 3
+#define pinB 4
 
 enum State {
   Type = 0,
@@ -24,6 +28,14 @@ enum Input {
   Forward = 2,
   Unknown = 3,
 };
+
+
+struct Message {
+  unsigned int R;
+  unsigned int G;
+  unsigned int B;
+};
+Message msg;
 
 StateMachine stateMachine(4, 5);
 Input input;
@@ -69,6 +81,19 @@ void setupStateMachine() {
 
 void setup() {
   Serial.begin(9600);
+
+  pinMode(pinR, OUTPUT);
+  pinMode(pinG, OUTPUT);
+  pinMode(pinB, OUTPUT);
+
+  setRGB(255, 0, 0);
+  delay(1000);
+  setRGB(0, 255, 0);
+  delay(1000);
+  setRGB(0, 0, 255);
+  delay(1000);
+  setRGB(0, 0, 0);
+  
   Serial.println("Starting State Machine ...");
   setupStateMachine();
   Serial.println("Start Machine Started");
@@ -112,6 +137,7 @@ void loop() {
 }
 
 int readInput() {
+
   if (stateMachine.GetState() == Type) {
     if (network.available()) {
       RF24NetworkHeader header;
@@ -133,16 +159,25 @@ int readInput() {
 }
 
 void outputType() {
-  Serial.print("(Type) ->> ");
+  //Serial.print("(Type) ->> ");
 }
 void outputBuzzer() {
   incomingChar = 2;
-  Serial.print("(Buzzer) ->> ");
+  //Serial.print("(Buzzer) ->> ");
 }
 void outputIntensity() {
   incomingChar = 2;
-  Serial.print("(Intensity) ->> ");
+  //Serial.print("(Intensity) ->> ");
 }
 void outputColor() {
-  Serial.print("(Color) ->> ");
+  setRGB(msg.R, msg.G, msg.B);
+  //Serial.print("(Color) ->> ");
+}
+
+
+
+void setRGB(int red, int green, int blue) {
+  analogWrite(pinR, red);
+  analogWrite(pinG, green);
+  analogWrite(pinB, blue);
 }

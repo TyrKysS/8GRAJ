@@ -13,6 +13,13 @@
 #include <SPI.h>
 //#include <printf.h>
 
+struct Message {
+  unsigned int R;
+  unsigned int G;
+  unsigned int B;
+};
+
+Message msg;
 
 /**** Configure the nrf24l01 CE and CS pins ****/
 RF24 radio(7, 8);
@@ -65,14 +72,24 @@ void setup() {
 
 void loop() {
   mesh.update();
+
   if (Serial.available() > 0) {
     
     char type;
-    if(counter%2==0) type = 'I';
-    else type = 'R';
+    if (counter % 2 == 0) {
+      type = 'R';
+      msg.R = 255;
+      msg.G = 255;
+      msg.B = 255;
+    } else {
+      type = 'I';
+      msg.R = 255;
+      msg.G = 0;
+      msg.B = 0;
+    }
 
     // Send an 'M' type message containing the current data information
-    if (!mesh.write(&counter, type, sizeof(counter))) {
+    if (!mesh.write(&msg, type, sizeof(msg))) {
       // If a write fails, check connectivity to the mesh network
       if (!mesh.checkConnection()) {
         //refresh the network address

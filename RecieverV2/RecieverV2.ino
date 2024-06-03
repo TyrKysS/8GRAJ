@@ -5,11 +5,14 @@
 #include "RF24Network.h"
 #include "RF24Mesh.h"
 #include <SPI.h>
+#include <Wire.h>
+#include <BH1750.h>
 
 RF24 radio(7, 8);
 RF24Network network(radio);
 RF24Mesh mesh(radio, network);
 
+BH1750 luxSenzor;
 
 #define pinR 2
 #define pinG 3
@@ -18,7 +21,7 @@ RF24Mesh mesh(radio, network);
 enum State {
   Type = 0,
   Buzzer = 1,
-  Intensity = 2,
+  isLight = 2,
   Color = 3
 };
 
@@ -26,7 +29,8 @@ enum Input {
   Incident = 0,
   Request = 1,
   Forward = 2,
-  Unknown = 3,
+  Backward = 3,
+  Unknown = 4,
 };
 
 
@@ -37,32 +41,36 @@ struct Message {
 };
 Message msg;
 
-StateMachine stateMachine(4, 5);
+StateMachine stateMachine(4, 6);
 Input input;
 
-int incomingChar = 3;
+int incomingChar = 4;
 
 
 void setupStateMachine() {
   stateMachine.AddTransition(Type, Buzzer, []() {
     return input == Incident;
   });
-  stateMachine.AddTransition(Type, Intensity, []() {
+  stateMachine.AddTransition(Type, isLight, []() {
     return input == Request;
   });
   stateMachine.AddTransition(Buzzer, Color, []() {
     return input == Forward;
   });
-  stateMachine.AddTransition(Intensity, Color, []() {
+  stateMachine.AddTransition(isLight, Color, []() {
     return input == Forward;
   });
   stateMachine.AddTransition(Color, Type, []() {
     return input == Forward;
   });
+  stateMachine.AddTransition(isLight, Type, []() {
+    return input == Backward;
+  });
+
 
   stateMachine.SetOnEntering(Type, outputType);
   stateMachine.SetOnEntering(Buzzer, outputBuzzer);
-  stateMachine.SetOnEntering(Intensity, outputIntensity);
+  stateMachine.SetOnEntering(isLight, outputisLight);
   stateMachine.SetOnEntering(Color, outputColor);
 
   stateMachine.SetOnLeaving(Type, []() {
@@ -71,8 +79,8 @@ void setupStateMachine() {
   stateMachine.SetOnLeaving(Buzzer, []() {
     Serial.print("(Buzzer) -> ");
   });
-  stateMachine.SetOnLeaving(Intensity, []() {
-    Serial.print("(Intensity) -> ");
+  stateMachine.SetOnLeaving(isLight, []() {
+    Serial.print("(isLight) -> ");
   });
   stateMachine.SetOnLeaving(Color, []() {
     Serial.print("(Color) ->");
@@ -86,6 +94,8 @@ void setup() {
   pinMode(pinG, OUTPUT);
   pinMode(pinB, OUTPUT);
 
+  luxSenzor.begin();
+
   setRGB(255, 0, 0);
   delay(1000);
   setRGB(0, 255, 0);
@@ -93,7 +103,7 @@ void setup() {
   setRGB(0, 0, 255);
   delay(1000);
   setRGB(0, 0, 0);
-  
+
   Serial.println("Starting State Machine ...");
   setupStateMachine();
   Serial.println("Start Machine Started");
@@ -153,6 +163,7 @@ int readInput() {
     case 0: currentInput = Input::Incident; break;
     case 1: currentInput = Input::Request; break;
     case 2: currentInput = Input::Forward; break;
+    case 3: currentInput = Input::Backward; break;
     default: break;
   }
   return currentInput;
@@ -162,12 +173,26 @@ void outputType() {
   //Serial.print("(Type) ->> ");
 }
 void outputBuzzer() {
+  //TODO activate buzzer
   incomingChar = 2;
   //Serial.print("(Buzzer) ->> ");
 }
-void outputIntensity() {
-  incomingChar = 2;
-  //Serial.print("(Intensity) ->> ");
+void outputisLight() {
+  uint16_t lux = luxSenzor.readLightLevel();
+  Serial.print("Intenzita světla: ");
+  Serial.println(lux);
+  if (lux < 100) incomingChar = 2;
+  else {
+    for (int i = 0; i < 5; i++) {
+      setRGB(0, 255, 0);
+      delay(100);
+      setRGB(0, 0, 0);
+      delay(100);
+    }
+    incomingChar = 3;
+  }
+  
+  //Serial.print("(isLight) ->> ");
 }
 void outputColor() {
   setRGB(msg.R, msg.G, msg.B);

@@ -8,15 +8,6 @@
 #include <Wire.h>
 #include <BH1750.h>
 
-#define pinR 2
-#define pinG 3
-#define pinB 4
-
-#define BUTTON_PIN 5
-
-int potPin = A0;
-int potProm = 0;
-int ledProm = 0;
 
 RF24 radio(7, 8);
 RF24Network network(radio);
@@ -24,11 +15,18 @@ RF24Mesh mesh(radio, network);
 
 BH1750 luxSenzor;
 
+#define pinR 2
+#define pinG 3
+#define pinB 4
 
-enum LocalSate {
+enum State {
   Off = 0,
   White = 1,
-  Yellow = 2
+  Yellow = 2,
+  Type = 3,
+  Buzzer = 4,
+  isLight = 5,
+  Color = 6
 };
 
 enum Input {
@@ -40,47 +38,6 @@ enum Input {
 };
 
 
-StateMachine localStateMachine(3, 3);
-Input localInput;
-Input currentLocalInput;
-
-void setuplocalStateMachine() {
-  localStateMachine.AddTransition(Off, White, []() {
-    return localInput == Forward;
-  });
-  localStateMachine.AddTransition(White, Yellow, []() {
-    return localInput == Forward;
-  });
-  localStateMachine.AddTransition(Yellow, Off, []() {
-    return localInput == Forward;
-  });
-
-  localStateMachine.SetOnEntering(Off, outputOff);
-  localStateMachine.SetOnEntering(White, outputWhite);
-  localStateMachine.SetOnEntering(Yellow, outputYellow);
-
-  localStateMachine.SetOnLeaving(Off, []() {
-    Serial.print("(Off) -> ");
-  });
-  localStateMachine.SetOnLeaving(White, []() {
-    Serial.print("(White) -> ");
-  });
-  localStateMachine.SetOnLeaving(Yellow, []() {
-    Serial.print("(Yellow) -> ");
-  });
-}
-
-
-enum RFState {
-  Type = 0,
-  Buzzer = 1,
-  isLight = 2,
-  Color = 3
-};
-
-
-
-
 struct Message {
   unsigned int R;
   unsigned int G;
@@ -88,71 +45,120 @@ struct Message {
 };
 Message msg;
 
-StateMachine RfstateMachine(4, 6);
-Input Rfinput;
+StateMachine rfStateMachine(7, 6);
+Input rfInput;
 
 int incomingChar = 1;
 
-void setupStateMachine() {
-  RfstateMachine.AddTransition(Type, Buzzer, []() {
-    return Rfinput == Incident;
+
+void setuprfStateMachine() {
+  rfStateMachine.AddTransition(Type, Buzzer, []() {
+    return rfInput == Incident;
   });
-  RfstateMachine.AddTransition(Type, isLight, []() {
-    return Rfinput == Request;
+  rfStateMachine.AddTransition(Type, isLight, []() {
+    return rfInput == Request;
   });
-  RfstateMachine.AddTransition(Buzzer, Color, []() {
-    return Rfinput == Forward;
+  rfStateMachine.AddTransition(Buzzer, Color, []() {
+    return rfInput == Forward;
   });
-  RfstateMachine.AddTransition(isLight, Color, []() {
-    return Rfinput == Forward;
+  rfStateMachine.AddTransition(isLight, Color, []() {
+    return rfInput == Forward;
   });
-  RfstateMachine.AddTransition(Color, Type, []() {
-    return Rfinput == Forward;
+  rfStateMachine.AddTransition(Color, Type, []() {
+    return rfInput == Forward;
   });
-  RfstateMachine.AddTransition(isLight, Type, []() {
-    return Rfinput == Backward;
+  rfStateMachine.AddTransition(isLight, Type, []() {
+    return rfInput == Backward;
   });
 
 
-  RfstateMachine.SetOnEntering(Type, outputType);
-  RfstateMachine.SetOnEntering(Buzzer, outputBuzzer);
-  RfstateMachine.SetOnEntering(isLight, outputisLight);
-  RfstateMachine.SetOnEntering(Color, outputColor);
+  rfStateMachine.SetOnEntering(Type, outputType);
+  rfStateMachine.SetOnEntering(Buzzer, outputBuzzer);
+  rfStateMachine.SetOnEntering(isLight, outputisLight);
+  rfStateMachine.SetOnEntering(Color, outputColor);
 
-  RfstateMachine.SetOnLeaving(Type, []() {
+  rfStateMachine.SetOnLeaving(Type, []() {
     Serial.print("(Type) -> ");
   });
-  RfstateMachine.SetOnLeaving(Buzzer, []() {
+  rfStateMachine.SetOnLeaving(Buzzer, []() {
     Serial.print("(Buzzer) -> ");
   });
-  RfstateMachine.SetOnLeaving(isLight, []() {
+  rfStateMachine.SetOnLeaving(isLight, []() {
     Serial.print("(isLight) -> ");
   });
-  RfstateMachine.SetOnLeaving(Color, []() {
+  rfStateMachine.SetOnLeaving(Color, []() {
     Serial.print("(Color) ->");
   });
 }
 
+
+
+
+#define BUTTON_PIN 5
+
+int potPin = A0;
+int potProm = 0;
+int ledProm = 0;
+
+StateMachine btnStateMachine(3, 3);
+Input btnInput;
+
+Input currentInput;
+
+void setupBtnStateMachine() {
+  btnStateMachine.AddTransition(Off, White, []() {
+    return btnInput == Forward;
+  });
+  btnStateMachine.AddTransition(White, Yellow, []() {
+    return btnInput == Forward;
+  });
+  btnStateMachine.AddTransition(Yellow, Off, []() {
+    return btnInput == Forward;
+  });
+
+  btnStateMachine.SetOnEntering(Off, outputOff);
+  btnStateMachine.SetOnEntering(White, outputWhite);
+  btnStateMachine.SetOnEntering(Yellow, outputYellow);
+
+  btnStateMachine.SetOnLeaving(Off, []() {
+    Serial.print("(Off) -> ");
+  });
+  btnStateMachine.SetOnLeaving(White, []() {
+    Serial.print("(White) -> ");
+  });
+  btnStateMachine.SetOnLeaving(Yellow, []() {
+    Serial.print("(Yellow) -> ");
+  });
+}
+
+
 void setup() {
   Serial.begin(9600);
+
+  pinMode(pinR, OUTPUT);
+  pinMode(pinG, OUTPUT);
+  pinMode(pinB, OUTPUT);
+
   luxSenzor.begin();
 
-  Serial.println("Starting setuplocalStateMachine ...");
-  setuplocalStateMachine();
-  Serial.println("Start setuplocalStateMachine");
+  setRGB(255, 0, 0);
+  delay(1000);
+  setRGB(0, 255, 0);
+  delay(1000);
+  setRGB(0, 0, 255);
+  delay(1000);
+  setRGB(0, 0, 0);
 
-  localStateMachine.SetState(Off, false, true);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-
-  currentLocalInput = Input::Unknown;
-
-
-  Serial.println("Starting setupStateMachine ...");
-  setupStateMachine();
-  Serial.println("Start setupStateMachine");
+  Serial.println("Starting State Machine ...");
+  setuprfStateMachine();
+  Serial.println("Start Machine Started");
   Serial.print("incomingChar ");
   Serial.println(incomingChar);
-  RfstateMachine.SetState(Type, false, true);
+  rfStateMachine.SetState(Type, false, true);
+  //incomingChar = 0;
+
+
+
 
   while (!Serial) {
     // some boards need this because of native USB capability
@@ -174,27 +180,90 @@ void setup() {
       // hold in an infinite loop
     }
   } else Serial.println("ready");
+
+  Serial.println("Starting State Machine...");
+  setupBtnStateMachine();
+  Serial.println("Start Machine Started");
+
+  btnStateMachine.SetState(Off, false, true);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(potPin, INPUT);
+
+  currentInput = Input::Unknown;
 }
+
 
 void loop() {
   if (digitalRead(BUTTON_PIN) == 0) {
-    localStateMachine.Update();
-    currentLocalInput = Input::Forward;
+    Serial.println("Button pressed ... ");
+    btnStateMachine.Update();
+    currentInput = Input::Forward;
     delay(500);
-    Serial.println("BTN pressed");
+  } else {
+    mesh.update();
+    mesh.DHCP();
+    rfInput = static_cast<Input>(readrfInput());
+    rfStateMachine.Update();
   }
   potProm = analogRead(potPin);
   //Serial.println(potProm);
   ledProm = map(potProm, 0, 1023, 0, 255);
-
-
-
-  mesh.update();
-  mesh.DHCP();
-
-  Rfinput = static_cast<Input>(readInput());
-  RfstateMachine.Update();
 }
+
+int readrfInput() {
+
+  if (rfStateMachine.GetState() == Type) {
+    if (network.available()) {
+      RF24NetworkHeader header;
+      network.peek(header);
+      network.read(header, &msg, sizeof(msg));
+      if (header.type == 'I') incomingChar = 2;
+      else incomingChar = 1;
+      Serial.println();
+    }
+  }
+  Input currentrfInput = Input::Unknown;
+  switch (incomingChar) {
+    case 0: currentrfInput = Input::Forward; break;
+    case 1: currentrfInput = Input::Request; break;
+    case 2: currentrfInput = Input::Incident; break;
+    case 3: currentrfInput = Input::Backward; break;
+    default: break;
+  }
+  return currentrfInput;
+}
+
+void outputType() {
+  //Serial.print("(Type) ->> ");
+}
+void outputBuzzer() {
+  //TODO activate buzzer
+  incomingChar = 0;
+  //Serial.print("(Buzzer) ->> ");
+}
+void outputisLight() {
+  uint16_t lux = luxSenzor.readLightLevel();
+  Serial.print("Intenzita světla: ");
+  Serial.println(lux);
+  if (lux < 100) incomingChar = 0;
+  else {
+    for (int i = 0; i < 5; i++) {
+      setRGB(0, 255, 0);
+      delay(100);
+      setRGB(0, 0, 0);
+      delay(100);
+    }
+    incomingChar = 3;
+  }
+
+  //Serial.print("(isLight) ->> ");
+}
+void outputColor() {
+  setRGB(msg.R, msg.G, msg.B);
+  //Serial.print("(Color) ->> ");
+}
+
+
 
 void outputOff() {
   Serial.print("(Off) ->> ");
@@ -212,64 +281,7 @@ void outputYellow() {
 }
 
 
-
-int readInput() {
-
-  if (RfstateMachine.GetState() == Type) {
-    if (network.available()) {
-      RF24NetworkHeader header;
-      network.peek(header);
-      network.read(header, &msg, sizeof(msg));
-      if (header.type == 'I') incomingChar = 2;
-      else incomingChar = 1;
-      Serial.println();
-    }
-  }
-  Input currentInput = Input::Unknown;
-  switch (incomingChar) {
-    case 0: currentInput = Input::Forward; break;
-    case 1: currentInput = Input::Request; break;
-    case 2: currentInput = Input::Incident; break;
-    case 3: currentInput = Input::Backward; break;
-    default: break;
-  }
-  return currentInput;
-}
-
-void outputType() {
-  //Serial.print("(Type) ->> ");
-}
-void outputBuzzer() {
-  //TODO activate buzzer
-  incomingChar = 0;
-  //Serial.print("(Buzzer) ->> ");
-}
-
-void outputisLight() {
-  uint16_t lux = luxSenzor.readLightLevel();
-  Serial.print("Intenzita světla: ");
-  Serial.println(lux);
-  if (lux < 100) incomingChar = 2;
-  else {
-    for (int i = 0; i < 5; i++) {
-      setRGB(0, 255, 0);
-      delay(100);
-      setRGB(0, 0, 0);
-      delay(100);
-    }
-    incomingChar = 0;
-  }
-
-  //Serial.print("(isLight) ->> ");
-}
-void outputColor() {
-  setRGB(msg.R, msg.G, msg.B);
-  //Serial.print("(Color) ->> ");
-}
-
-
 void setRGB(int red, int green, int blue) {
-  // nastavení všech barev na zvolené intenzity
   analogWrite(pinR, red);
   analogWrite(pinG, green);
   analogWrite(pinB, blue);

@@ -21,15 +21,12 @@ enum Input {
   Unknown = 1,
 };
 
-StateMachine stateMachine(3, 4);
+StateMachine stateMachine(3, 3);
 Input input;
 
 Input currentInput;
 
 void setupStateMachine() {
-  stateMachine.AddTransition(Off, Off, []() {
-    return input == Unknown;
-  });
   stateMachine.AddTransition(Off, White, []() {
     return input == Forward;
   });
@@ -64,19 +61,16 @@ void setup() {
 
   stateMachine.SetState(Off, false, true);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(potPin, INPUT);
 
   currentInput = Input::Unknown;
 }
 
 void loop() {
-  
-  
+
   if (digitalRead(BUTTON_PIN) == 0) {
-    Serial.print("Btn pressed ... ");
-    Serial.println(currentInput);
     stateMachine.Update();
     currentInput = Input::Forward;
-    
     delay(500);
   }
   potProm = analogRead(potPin);

@@ -1,6 +1,4 @@
 #include "StateMachineLib.h"
-
-
 #include "RF24.h"
 #include "RF24Network.h"
 #include "RF24Mesh.h"
@@ -8,17 +6,31 @@
 #include <Wire.h>
 #include <BH1750.h>
 
-
+// RF24L01 settings a pins assignments
 RF24 radio(7, 8);
 RF24Network network(radio);
 RF24Mesh mesh(radio, network);
 
+// light sensor setting
 BH1750 luxSenzor;
 
+// RGB LED pin assignments
 #define pinR 2
 #define pinG 3
 #define pinB 4
 
+// Button pin assignment
+#define BUTTON_PIN 5
+
+#define buzzer 9
+
+// local state machine for btn and potentiometer
+int potPin = A0, potProm = 0, ledProm = 0;
+
+// header message state machine from NRF24L01
+int incomingChar = 1;
+
+// list of states of both state machines
 enum State {
   Off = 0,
   White = 1,
@@ -28,7 +40,7 @@ enum State {
   isLight = 5,
   Color = 6
 };
-
+// list of inputs of both state machines
 enum Input {
   Forward = 0,
   Unknown = 1,
@@ -37,21 +49,20 @@ enum Input {
   Backward = 4,
 };
 
-
+// structure of messages from NRF24L01 modules
 struct Message {
   unsigned int R;
   unsigned int G;
   unsigned int B;
 };
+
 Message msg;
 
+// Setup message state machine 
 StateMachine rfStateMachine(7, 6);
 Input rfInput;
 
-int incomingChar = 1;
-
-
-void setuprfStateMachine() {
+void setupRfStateMachine() {
   rfStateMachine.AddTransition(Type, Buzzer, []() {
     return rfInput == Incident;
   });
@@ -71,7 +82,6 @@ void setuprfStateMachine() {
     return rfInput == Backward;
   });
 
-
   rfStateMachine.SetOnEntering(Type, outputType);
   rfStateMachine.SetOnEntering(Buzzer, outputBuzzer);
   rfStateMachine.SetOnEntering(isLight, outputisLight);
@@ -87,22 +97,17 @@ void setuprfStateMachine() {
     Serial.print("(isLight) -> ");
   });
   rfStateMachine.SetOnLeaving(Color, []() {
-    Serial.print("(Color) ->");
+    Serial.print("(Color) -> ");
   });
 }
 
 
 
 
-#define BUTTON_PIN 5
 
-int potPin = A0;
-int potProm = 0;
-int ledProm = 0;
-
+// Setup local state machine 
 StateMachine btnStateMachine(3, 3);
 Input btnInput;
-
 Input currentInput;
 
 void setupBtnStateMachine() {
@@ -131,9 +136,12 @@ void setupBtnStateMachine() {
   });
 }
 
-
+// Initialize main program
 void setup() {
   Serial.begin(9600);
+
+  pinMode(buzzer, OUTPUT);
+  digitalWrite(buzzer, HIGH);
 
   pinMode(pinR, OUTPUT);
   pinMode(pinG, OUTPUT);
@@ -141,6 +149,7 @@ void setup() {
 
   luxSenzor.begin();
 
+  // check the RGB LED
   setRGB(255, 0, 0);
   delay(1000);
   setRGB(0, 255, 0);
@@ -149,20 +158,24 @@ void setup() {
   delay(1000);
   setRGB(0, 0, 0);
 
-  Serial.println("Starting State Machine ...");
-  setuprfStateMachine();
-  Serial.println("Start Machine Started");
-  Serial.print("incomingChar ");
+  Serial.println("Starting local State Machine...");
+  setupBtnStateMachine();
+  Serial.println("local state Machine Started");
+
+  btnStateMachine.SetState(Off, false, true);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(potPin, INPUT);
+  currentInput = Input::Unknown;
+
+  Serial.println("Starting communication State Machine ...");
+  setupRfStateMachine();
+  Serial.println("communication State Machine Started");
+  Serial.print("incomingChar: ");
   Serial.println(incomingChar);
   rfStateMachine.SetState(Type, false, true);
   //incomingChar = 0;
 
-
-
-
-  while (!Serial) {
-    // some boards need this because of native USB capability
-  }
+  while (!Serial) {}  // some boards need this because of native USB capability
   // Set the nodeID to 0 for the master node
   mesh.setNodeID(0);
   Serial.print("Node ID - ");
@@ -176,26 +189,20 @@ void setup() {
   if (!mesh.begin()) {
     // if mesh.begin() returns false for a master node, then radio.begin() returned false.
     Serial.println(F("Radio hardware not responding."));
-    while (1) {
-      // hold in an infinite loop
-    }
-  } else Serial.println("ready");
+    while (1) {}  // hold in an infinite loop
+  }
 
-  Serial.println("Starting State Machine...");
-  setupBtnStateMachine();
-  Serial.println("Start Machine Started");
 
-  btnStateMachine.SetState(Off, false, true);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  pinMode(potPin, INPUT);
-
-  currentInput = Input::Unknown;
+  // everything is working correctly
+  setRGB(0, 255, 0);
+  delay(1000);
+  setRGB(0, 0, 0);
 }
 
-
+// Main loop
 void loop() {
   if (digitalRead(BUTTON_PIN) == 0) {
-    Serial.println("Button pressed ... ");
+    //Serial.println("Button pressed ... ");
     btnStateMachine.Update();
     currentInput = Input::Forward;
     delay(500);
@@ -211,7 +218,6 @@ void loop() {
 }
 
 int readrfInput() {
-
   if (rfStateMachine.GetState() == Type) {
     if (network.available()) {
       RF24NetworkHeader header;
@@ -219,32 +225,35 @@ int readrfInput() {
       network.read(header, &msg, sizeof(msg));
       if (header.type == 'I') incomingChar = 2;
       else incomingChar = 1;
-      Serial.println();
+      //Serial.println();
     }
   }
-  Input currentrfInput = Input::Unknown;
+  Input currentRfInput = Input::Unknown;
   switch (incomingChar) {
-    case 0: currentrfInput = Input::Forward; break;
-    case 1: currentrfInput = Input::Request; break;
-    case 2: currentrfInput = Input::Incident; break;
-    case 3: currentrfInput = Input::Backward; break;
+    case 0: currentRfInput = Input::Forward; break;
+    case 1: currentRfInput = Input::Request; break;
+    case 2: currentRfInput = Input::Incident; break;
+    case 3: currentRfInput = Input::Backward; break;
     default: break;
   }
-  return currentrfInput;
+  return currentRfInput;
 }
 
+/* ***********************
+output states of message state machine
+************************* */
 void outputType() {
-  //Serial.print("(Type) ->> ");
+  Serial.println("(Type) ->> ");
 }
 void outputBuzzer() {
-  //TODO activate buzzer
+  playBuzzer(10, 100);
   incomingChar = 0;
   //Serial.print("(Buzzer) ->> ");
 }
 void outputisLight() {
   uint16_t lux = luxSenzor.readLightLevel();
-  Serial.print("Intenzita světla: ");
-  Serial.println(lux);
+  //Serial.print("Intenzita světla: ");
+  //Serial.println(lux);
   if (lux < 100) incomingChar = 0;
   else {
     for (int i = 0; i < 5; i++) {
@@ -255,7 +264,6 @@ void outputisLight() {
     }
     incomingChar = 3;
   }
-
   //Serial.print("(isLight) ->> ");
 }
 void outputColor() {
@@ -264,25 +272,38 @@ void outputColor() {
 }
 
 
-
+/* ***********************
+output states of local state machine
+************************* */
 void outputOff() {
-  Serial.print("(Off) ->> ");
+  Serial.println("(Off) ->> ");
   setRGB(0, 0, 0);
+  digitalWrite(buzzer, HIGH);
 }
 
 void outputWhite() {
-  Serial.print("(White) ->> ");
+  Serial.println("(White) ->> ");
   setRGB(potProm, potProm, potProm);
+  digitalWrite(buzzer, HIGH);
 }
 
 void outputYellow() {
-  Serial.print("(Yellow) ->> ");
+  Serial.println("(Yellow) ->> ");
   setRGB(potProm, potProm, 0);
+  digitalWrite(buzzer, HIGH);
 }
 
-
+/* ***********************
+Method for setting RGB LED color
+************************* */
 void setRGB(int red, int green, int blue) {
   analogWrite(pinR, red);
   analogWrite(pinG, green);
   analogWrite(pinB, blue);
+}
+
+void playBuzzer(int frequency, int time) {
+  tone(buzzer, frequency, time);
+  delay(time);
+  digitalWrite(buzzer, HIGH);
 }
